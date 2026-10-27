@@ -1,0 +1,20 @@
+# Pastas de dados, ambiente virtual e IDE
+data/
+venv/
+__pycache__/
+.vscode/
+
+# Arquivos gerados durante treino e inferência
+*.keras
+*.h5
+*.json
+*.png
+*.pdf
+*.jpg
+*.jpeg
+captura_*.png
+
+# Arquivos temporários e de sistema
+Thumbs.db
+.DS_Store
+*.log
