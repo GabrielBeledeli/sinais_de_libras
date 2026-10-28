@@ -57,6 +57,7 @@ O projeto original (`pedra_papel_tesoura`) foi desenvolvido para o jogo de "Pedr
 | :--- | :--- | :--- |
 | **Estratégia de Split (Treino vs Validação)** | **Split ingênuo no final do tempo**:<br>`files[:cut]` (primeiros 80%) para treino e `files[cut:]` (últimos 20%) para validação. | **Split Balanceado Estratificado no Tempo**:<br>Divide as fotos de cada classe em duas metades temporais (Metade 1 = Claro, Metade 2 = Escuro) e extrai **80% de treino e 20% de validação de cada metade separadamente**. |
 | **Resolução do Viés de Validação** | Se o aluno gravasse claro primeiro e escuro depois, a validação teria **100% de fotos escuras e 0% de fotos claras**, gerando um modelo com avaliação distorcida. | Com a nova divisão, tanto o treino quanto a validação possuem **exatamente 50% de fotos claras e 50% de fotos escuras**. |
+| **Arquitetura e Treino em 2 Etapas (Fine-Tuning)** | Base MobileNetV2 100% congelada com apenas `GlobalAveragePooling2D` e `Dense`. | Combinação de `GlobalAveragePooling2D` + `GlobalMaxPooling2D` + `LayerNormalization`, `RandomTranslation`, e **Treino em 2 Etapas** (Etapa 1 com base congelada + Etapa 2 de *Fine-Tuning* nas últimas 20 camadas com `EarlyStopping(restore_best_weights=True)`). |
 | **Geração Automática do PDF de Entrega** | Não existia. | Adicionada ao final a função `gerar_pdf_dataset()`, que compila todas as fotos da pasta `data/` em um documento A4 com miniaturas organizadas por classe (`dataset_imagens.pdf`), atendendo à regra de entrega da atividade. |
 | **Tratamento de Exceções** | Não verificava se a pasta `data/` ou as classes estavam vazias antes de rodar o treino. | Adicionadas validações que avisam no terminal de forma clara caso falte coletar dados. |
 
@@ -81,6 +82,7 @@ Graças ao arquivo `.gitignore`, o repositório mantém apenas o código-fonte e
 * `play.py` - Demonstração em tempo real.
 * `requirements.txt` - Dependências do Python.
 * `README.md` - Documentação completa e relatório de mudanças.
+* `RESPOSTAS_PARTE5.md` - Respostas conceituais e teóricas da Parte 5 da atividade.
 * `.gitignore` - Ignora as pastas `data/`, `venv/`, caches e arquivos binários gerados (`.keras`, `.pdf`, `.png`).
 
 ---

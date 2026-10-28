@@ -56,7 +56,7 @@ cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     raise SystemExit("Nao consegui abrir a webcam. Verifique conexao e permissoes.")
 
-recent = deque(maxlen=7)  # suavizacao temporal por voto da maioria
+recent_probs = deque(maxlen=6)  # suavizacao temporal pela media das probabilidades
 prev_time = time.time()
 fps = 0
 
@@ -84,10 +84,13 @@ while True:
     x1, y1 = w // 2 - side // 2, h // 2 - side // 2
     roi = frame[y1:y1 + side, x1:x1 + side]
 
-    # Inferencia do modelo
-    raw_label, conf, probs = predict(roi)
-    recent.append(raw_label)
-    stable_label = Counter(recent).most_common(1)[0][0]
+    # Inferencia do modelo com suavizacao temporal das probabilidades
+    _, _, raw_probs = predict(roi)
+    recent_probs.append(raw_probs)
+    probs = np.mean(recent_probs, axis=0)
+    best_idx = int(np.argmax(probs))
+    stable_label = class_names[best_idx]
+    conf = float(probs[best_idx])
 
     # Cor e estilo do retangulo conforme a deteccao
     if stable_label != "nada" and conf >= 0.70:

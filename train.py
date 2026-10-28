@@ -98,33 +98,68 @@ def make_ds(paths, labels, training):
 train_ds = make_ds(train_paths, train_y, True)
 val_ds = make_ds(val_paths, val_y, False)
 
-# Data augmentation: so atua durante o treino
+# Data augmentation calibrado para evitar que o modelo decore posicao/distancia fixa
+# O zoom negativo (-0.30) aproxima a mao (como no play.py) e corta a borda inferior (pulso/manga)
 augment = tf.keras.Sequential([
-    tf.keras.layers.RandomRotation(0.08),
-    tf.keras.layers.RandomZoom(0.15),
-    tf.keras.layers.RandomBrightness(0.25),
-    tf.keras.layers.RandomContrast(0.25),
+    tf.keras.layers.RandomTranslation(0.15, 0.15, fill_mode="nearest"),
+    tf.keras.layers.RandomZoom((-0.30, 0.15), fill_mode="nearest"),
+    tf.keras.layers.RandomRotation(0.10, fill_mode="nearest"),
+    tf.keras.layers.RandomBrightness(0.20),
+    tf.keras.layers.RandomContrast(0.20),
 ])
 
 base = tf.keras.applications.MobileNetV2(
     input_shape=(IMG_SIZE, IMG_SIZE, 3), include_top=False, weights="imagenet")
-base.trainable = False  # <- o "congelamento" do transfer learning
+base.trainable = False  # Etapa 1: base 100% congelada para nao distorcer os pesos pre-treinados
 
 inputs = tf.keras.Input(shape=(IMG_SIZE, IMG_SIZE, 3))
 x = augment(inputs)
 x = tf.keras.applications.mobilenet_v2.preprocess_input(x)
 x = base(x, training=False)
-x = tf.keras.layers.GlobalAveragePooling2D()(x)
+
+# Combina Average Pooling e Max Pooling com LayerNormalization (estavel em treino e validacao)
+avg_pool = tf.keras.layers.GlobalAveragePooling2D()(x)
+max_pool = tf.keras.layers.GlobalMaxPooling2D()(x)
+x = tf.keras.layers.Concatenate()([avg_pool, max_pool])
+x = tf.keras.layers.LayerNormalization()(x)
 x = tf.keras.layers.Dropout(0.3)(x)
+x = tf.keras.layers.Dense(128, activation="relu")(x)
+x = tf.keras.layers.Dropout(0.2)(x)
 outputs = tf.keras.layers.Dense(len(class_names), activation="softmax")(x)
 model = tf.keras.Model(inputs, outputs)
 
+# --- ETAPA 1: Treinar apenas a cabeca classificadora (estabiliza os pesos novos) ---
+print("\n[Etapa 1/2] Treinando camada classificadora (base congelada)...")
 model.compile(optimizer=tf.keras.optimizers.Adam(1e-3),
               loss="sparse_categorical_crossentropy", metrics=["accuracy"])
 model.summary()
 
-print("\nIniciando treinamento...")
-hist = model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS)
+hist1 = model.fit(train_ds, validation_data=val_ds, epochs=6)
+
+# --- ETAPA 2: Fine-Tuning suave nas ultimas 20 camadas para focar nos dedos ---
+print("\n[Etapa 2/2] Ajuste fino (Fine-Tuning) nas camadas finais da MobileNetV2...")
+base.trainable = True
+for layer in base.layers[:-20]:
+    layer.trainable = False
+for layer in base.layers:
+    if isinstance(layer, tf.keras.layers.BatchNormalization):
+        layer.trainable = False
+
+model.compile(optimizer=tf.keras.optimizers.Adam(5e-5),
+              loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+
+callbacks = [
+    tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss", patience=3, restore_best_weights=True, verbose=1
+    )
+]
+
+hist2 = model.fit(train_ds, validation_data=val_ds, epochs=6, callbacks=callbacks)
+
+# Combina o historico das duas etapas para o grafico curvas.png
+history_combined = {
+    k: hist1.history[k] + hist2.history[k] for k in hist1.history
+}
 model.save("gesture_model.keras")
 
 with open("class_names.json", "w", encoding="utf-8") as f:
@@ -134,8 +169,8 @@ with open("class_names.json", "w", encoding="utf-8") as f:
 plt.figure(figsize=(10, 4))
 for i, (m, t) in enumerate([("accuracy", "Acuracia"), ("loss", "Loss")]):
     plt.subplot(1, 2, i + 1)
-    plt.plot(hist.history[m], label="treino")
-    plt.plot(hist.history["val_" + m], label="validacao")
+    plt.plot(history_combined[m], label="treino")
+    plt.plot(history_combined["val_" + m], label="validacao")
     plt.title(t); plt.xlabel("epoca"); plt.legend()
 plt.tight_layout(); plt.savefig("curvas.png")
 print("\nGrafico de curvas de aprendizado salvo em: curvas.png")
